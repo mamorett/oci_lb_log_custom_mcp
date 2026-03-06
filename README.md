@@ -26,7 +26,7 @@ export OCI_COMPARTMENT_ID="ocid1.tenancy.oc1..xxxx"
 export OCI_LOG_GROUP_ID="ocid1.loggroup.oc1.xxxx"
 export OCI_LOG_ID="ocid1.log.oc1.xxxx"
 
-uvx --from git+https://github.com/YOUR_USERNAME/oci-lb-log-custom-mcp.git oci-lb-logs
+uvx --from git+https://github.com/mamorett/oci_lb_log_custom_mcp.git oci-lb-logs
 ```
 
 ### Configuration for MCP Hosts (e.g., Claude Desktop)
@@ -40,7 +40,7 @@ Add the following entry to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/YOUR_USERNAME/oci-lb-log-custom-mcp.git",
+        "git+https://github.com/mamorett/oci_lb_log_custom_mcp.git",
         "oci-lb-logs"
       ],
       "env": {
