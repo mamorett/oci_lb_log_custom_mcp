@@ -57,31 +57,69 @@ Add the following entry to your `claude_desktop_config.json`:
 
 ## Tools Exposed
 
-### `search_logs_by_country`
-Search logs by country name or country code.
-- `country` (string, optional): Full country name (e.g., "United States").
-- `country_code` (string, optional): ISO country code (e.g., "US").
-- `time_range` (string): Time window to search (e.g., "24h", "7d", "1w"). Default: "24h".
-- `limit` (integer): Maximum number of entries to return. Default: 100.
+### IP Tools
 
-### `search_logs_by_ip`
-Search logs by a specific IP address or an IP range prefix.
-- `ip_address` (string, optional): Specific IP address.
-- `ip_range` (string, optional): IP prefix (e.g., "192.168").
-- `time_range` (string): Time window to search. Default: "24h".
-- `limit` (integer): Maximum number of entries to return. Default: 100.
+#### `list_unique_ips`
+List all unique IP addresses seen in the logs, deduplicated and sorted by request count.
+Optionally filter by country to get all IPs from a specific origin.
+- `time_range` (string): Time window to search (e.g., "24h", "7d"). Default: `"24h"`.
+- `limit` (integer): Max raw log entries to scan. Default: `500`.
+- `country` (string, optional): Filter by full country name (e.g., `"Germany"`).
+- `country_code` (string, optional): Filter by ISO country code (e.g., `"DE"`).
 
-### `search_logs_by_location`
-Search logs within a geographic bounding box.
+Returns a list of **`IPSummary`** objects: `ip`, `request_count`, `country`, `country_code`, `city`, `isp`, `protocols`.
+
+#### `get_top_ips`
+Return the top N IP addresses ranked by request count over the given time range.
+Samples a large window of logs to find the noisiest sources.
+- `time_range` (string): Time window to analyze. Default: `"24h"`.
+- `top_n` (integer): Number of top IPs to return. Default: `20`.
+- `sample_limit` (integer): Max raw log entries to scan. Default: `5000`.
+
+Returns a list of **`IPSummary`** objects sorted by `request_count` descending.
+
+#### `get_ips_by_country`
+Return unique IP addresses grouped by country, with per-country request totals and unique IP counts.
+Useful for a full breakdown of all traffic sources by origin.
+- `time_range` (string): Time window to analyze. Default: `"24h"`.
+- `limit` (integer): Max raw log entries to scan. Default: `2000`.
+
+Returns a list of **`IPsByCountry`** objects sorted by `total_requests` descending.
+Each entry contains: `country`, `country_code`, `total_requests`, `unique_ip_count`, and a full `ips` list of **`IPSummary`**.
+
+---
+
+### Search / Filter Tools
+
+#### `search_logs_by_country`
+Search raw log entries by country name or country code.
+- `country` (string, optional): Full country name (e.g., `"United States"`).
+- `country_code` (string, optional): ISO country code (e.g., `"US"`).
+- `time_range` (string): Time window to search. Default: `"24h"`.
+- `limit` (integer): Maximum number of entries to return. Default: `100`.
+
+#### `search_logs_by_ip`
+Search raw log entries by a specific IP address or an IP range prefix.
+- `ip_address` (string, optional): Exact IP address.
+- `ip_range` (string, optional): IP prefix (e.g., `"192.168"`).
+- `time_range` (string): Time window to search. Default: `"24h"`.
+- `limit` (integer): Maximum number of entries to return. Default: `100`.
+
+#### `search_logs_by_location`
+Search raw log entries within a geographic bounding box.
 - `lat_min`, `lat_max`, `lon_min`, `lon_max` (float): Bounding box coordinates.
-- `time_range` (string): Time window to search. Default: "24h".
-- `limit` (integer): Maximum number of entries to return. Default: 100.
+- `time_range` (string): Time window to search. Default: `"24h"`.
+- `limit` (integer): Maximum number of entries to return. Default: `100`.
 
-### `get_traffic_analytics`
-Get aggregated traffic statistics and summaries.
-- `group_by` (string): Field to aggregate by ("country", "city", "isp", or "protocol"). Default: "country".
-- `time_range` (string): Time window to analyze. Default: "24h".
-- `limit` (integer): Number of raw log entries to sample for analytics. Default: 1000.
+---
+
+### Analytics Tools
+
+#### `get_traffic_analytics`
+Get aggregated traffic statistics (counts only, no IPs). Use the IP tools above if you need actual addresses.
+- `group_by` (string): Field to aggregate by (`"country"`, `"city"`, `"isp"`, or `"protocol"`). Default: `"country"`.
+- `time_range` (string): Time window to analyze. Default: `"24h"`.
+- `limit` (integer): Number of raw log entries to sample. Default: `1000`.
 
 ## Environment Variables
 
