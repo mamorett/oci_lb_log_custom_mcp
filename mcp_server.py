@@ -33,6 +33,22 @@ class AnalyticsResult(BaseModel):
     top_isps: List[str]
     time_range: str
 
+class IPSummary(BaseModel):
+    ip: str
+    request_count: int
+    country: str
+    country_code: str
+    city: str
+    isp: str
+    protocols: List[str]
+
+class IPsByCountry(BaseModel):
+    country: str
+    country_code: str
+    total_requests: int
+    unique_ip_count: int
+    ips: List[IPSummary]
+
 # --- Oracle Client ---
 
 class OracleLogsClient:
@@ -254,6 +270,198 @@ async def get_traffic_analytics(
         top_isps=[isp for isp, _ in Counter(isps).most_common(5)],
         time_range=time_range
     )
+
+@mcp.tool()
+async def list_unique_ips(
+    time_range: str = "24h",
+    limit: int = 500,
+    country: Optional[str] = None,
+    country_code: Optional[str] = None,
+) -> List[IPSummary]:
+    """List all unique IP addresses seen in the logs with their request count, country, city, ISP and protocols.
+    Optionally filter by country name or country code."""
+    from collections import defaultdict
+    client = get_client()
+    query = client._build_base_query()
+    conditions = []
+    if country:
+        conditions.append(f"data.Country = '{country}'")
+    if country_code:
+        conditions.append(f"data.CountryCode = '{country_code}'")
+    if conditions:
+        query += " | where " + " and ".join(conditions)
+    query += f" | limit {limit}"
+
+    raw_logs = await client.execute_query(query, time_range, limit)
+
+    ip_map: Dict[str, dict] = defaultdict(lambda: {
+        "request_count": 0,
+        "country": "",
+        "country_code": "",
+        "city": "",
+        "isp": "",
+        "protocols": set(),
+    })
+
+    for log in raw_logs:
+        data = log.get("logContent", {}).get("data", {})
+        ip = data.get("IP", "")
+        if not ip:
+            continue
+        rec = ip_map[ip]
+        rec["request_count"] += 1
+        rec["country"] = data.get("Country", rec["country"])
+        rec["country_code"] = data.get("CountryCode", rec["country_code"])
+        rec["city"] = data.get("City", rec["city"])
+        rec["isp"] = data.get("ISP", rec["isp"])
+        proto = data.get("Protocol", "")
+        if proto:
+            rec["protocols"].add(proto)
+
+    results = [
+        IPSummary(
+            ip=ip,
+            request_count=v["request_count"],
+            country=v["country"],
+            country_code=v["country_code"],
+            city=v["city"],
+            isp=v["isp"],
+            protocols=sorted(v["protocols"]),
+        )
+        for ip, v in ip_map.items()
+    ]
+    results.sort(key=lambda x: x.request_count, reverse=True)
+    return results
+
+
+@mcp.tool()
+async def get_top_ips(
+    time_range: str = "24h",
+    top_n: int = 20,
+    sample_limit: int = 5000,
+) -> List[IPSummary]:
+    """Return the top N IP addresses ranked by request count over the given time range."""
+    from collections import defaultdict
+    client = get_client()
+    query = client._build_base_query() + f" | limit {sample_limit}"
+    raw_logs = await client.execute_query(query, time_range, sample_limit)
+
+    ip_map: Dict[str, dict] = defaultdict(lambda: {
+        "request_count": 0,
+        "country": "",
+        "country_code": "",
+        "city": "",
+        "isp": "",
+        "protocols": set(),
+    })
+
+    for log in raw_logs:
+        data = log.get("logContent", {}).get("data", {})
+        ip = data.get("IP", "")
+        if not ip:
+            continue
+        rec = ip_map[ip]
+        rec["request_count"] += 1
+        rec["country"] = data.get("Country", rec["country"])
+        rec["country_code"] = data.get("CountryCode", rec["country_code"])
+        rec["city"] = data.get("City", rec["city"])
+        rec["isp"] = data.get("ISP", rec["isp"])
+        proto = data.get("Protocol", "")
+        if proto:
+            rec["protocols"].add(proto)
+
+    results = sorted(
+        [
+            IPSummary(
+                ip=ip,
+                request_count=v["request_count"],
+                country=v["country"],
+                country_code=v["country_code"],
+                city=v["city"],
+                isp=v["isp"],
+                protocols=sorted(v["protocols"]),
+            )
+            for ip, v in ip_map.items()
+        ],
+        key=lambda x: x.request_count,
+        reverse=True,
+    )
+    return results[:top_n]
+
+
+@mcp.tool()
+async def get_ips_by_country(
+    time_range: str = "24h",
+    limit: int = 2000,
+) -> List[IPsByCountry]:
+    """Return unique IP addresses grouped by country, with per-country totals.
+    Useful for understanding which countries have the most unique sources."""
+    from collections import defaultdict
+    client = get_client()
+    query = client._build_base_query() + f" | limit {limit}"
+    raw_logs = await client.execute_query(query, time_range, limit)
+
+    # country_code -> {country, country_code, ips: {ip -> IPSummary-like dict}}
+    country_map: Dict[str, dict] = defaultdict(lambda: {
+        "country": "",
+        "country_code": "",
+        "total_requests": 0,
+        "ip_data": defaultdict(lambda: {
+            "request_count": 0,
+            "city": "",
+            "isp": "",
+            "protocols": set(),
+        }),
+    })
+
+    for log in raw_logs:
+        data = log.get("logContent", {}).get("data", {})
+        ip = data.get("IP", "")
+        cc = data.get("CountryCode", "")
+        if not ip or not cc:
+            continue
+        crec = country_map[cc]
+        crec["country"] = data.get("Country", crec["country"])
+        crec["country_code"] = cc
+        crec["total_requests"] += 1
+        irec = crec["ip_data"][ip]
+        irec["request_count"] += 1
+        irec["city"] = data.get("City", irec["city"])
+        irec["isp"] = data.get("ISP", irec["isp"])
+        proto = data.get("Protocol", "")
+        if proto:
+            irec["protocols"].add(proto)
+
+    results = []
+    for cc, crec in country_map.items():
+        ip_summaries = sorted(
+            [
+                IPSummary(
+                    ip=ip,
+                    request_count=irec["request_count"],
+                    country=crec["country"],
+                    country_code=crec["country_code"],
+                    city=irec["city"],
+                    isp=irec["isp"],
+                    protocols=sorted(irec["protocols"]),
+                )
+                for ip, irec in crec["ip_data"].items()
+            ],
+            key=lambda x: x.request_count,
+            reverse=True,
+        )
+        results.append(
+            IPsByCountry(
+                country=crec["country"],
+                country_code=crec["country_code"],
+                total_requests=crec["total_requests"],
+                unique_ip_count=len(ip_summaries),
+                ips=ip_summaries,
+            )
+        )
+    results.sort(key=lambda x: x.total_requests, reverse=True)
+    return results
+
 
 def main():
     mcp.run()
