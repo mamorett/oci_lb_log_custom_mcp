@@ -1,0 +1,5 @@
+mcp
+mcp[fastmcp]
+oci
+python-dotenv
+pydantic
