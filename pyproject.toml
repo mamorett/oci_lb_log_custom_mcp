@@ -5,7 +5,7 @@ description = "MCP server for OCI Load Balancer custom log queries"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp",
+    "mcp>=1.13,<2",
     "oci",
     "python-dotenv",
     "pydantic",
